@@ -203,3 +203,18 @@ export const downloadHistoricalCsv = async (rawSymbol: string, days = 90): Promi
 
   return source;
 };
+
+// Tells the dev-server's background job which symbols to keep auto-refreshed
+// on a schedule, so quotes stay warm in the on-disk cache even when no one is
+// looking at the Watchlist tab.
+export const syncWatchlist = async (symbols: string[]): Promise<void> => {
+  try {
+    await fetch('/api/watchlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tickers: symbols.map(normalizeSymbol) }),
+    });
+  } catch (error) {
+    console.warn('Failed to sync watchlist for background auto-refresh:', (error as Error).message);
+  }
+};

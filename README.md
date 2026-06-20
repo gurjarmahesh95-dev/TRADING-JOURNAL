@@ -38,3 +38,13 @@ Finance's free chart API.
   (`/api/nse/*`, `/api/yahoo/*`) are only available while running `npm run dev`
   or `npm run preview` — they won't exist if you deploy the static `dist/`
   build elsewhere without an equivalent backend.
+- Every quote/historical response fetched through the proxy is cached to disk
+  under `.cache/market-data/` (quotes for 5 minutes, historical data for 24
+  hours), so repeat requests — and even a dev server restart — are served
+  from the cache instead of hitting NSE/Yahoo again within that window. This
+  directory is local-only and gitignored.
+- Whatever tickers are on your Watchlist are automatically synced to the dev
+  server (`POST /api/watchlist`) and kept warm in the background: a scheduled
+  job re-fetches each one (NSE first, Yahoo Finance fallback) every 5 minutes
+  by default, even if no one has the Watchlist tab open. Override the
+  interval with the `MARKET_DATA_REFRESH_MS` environment variable.

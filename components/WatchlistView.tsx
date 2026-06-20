@@ -4,7 +4,7 @@ import { Icon } from './Icon';
 import { Spinner } from './Spinner';
 import type { WatchlistItem, WatchlistScanResult } from '../types';
 import { scanWatchlistTickers } from '../services/geminiService';
-import { getQuotes, downloadHistoricalCsv, type MarketQuote } from '../services/marketDataService';
+import { getQuotes, downloadHistoricalCsv, syncWatchlist, type MarketQuote } from '../services/marketDataService';
 
 const WATCHLIST_STORAGE_KEY = 'swing-trade-watchlist';
 
@@ -28,6 +28,7 @@ export const WatchlistView: React.FC = () => {
 
     useEffect(() => {
         localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(watchlist));
+        syncWatchlist(watchlist.map(item => item.ticker));
     }, [watchlist]);
 
     const refreshQuotes = useCallback(async () => {
