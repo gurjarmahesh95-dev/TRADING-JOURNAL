@@ -1,9 +1,10 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Icon } from './Icon';
 import { Spinner } from './Spinner';
 import type { WatchlistItem, WatchlistScanResult } from '../types';
 import { scanWatchlistTickers } from '../services/geminiService';
+import { getQuotes, downloadHistoricalCsv, type MarketQuote } from '../services/marketDataService';
 
 const WATCHLIST_STORAGE_KEY = 'swing-trade-watchlist';
 
@@ -13,6 +14,10 @@ export const WatchlistView: React.FC = () => {
     const [isScanning, setIsScanning] = useState(false);
     const [scanResults, setScanResults] = useState<WatchlistScanResult[]>([]);
     const [error, setError] = useState('');
+
+    const [quotes, setQuotes] = useState<Record<string, MarketQuote | null>>({});
+    const [isFetchingQuotes, setIsFetchingQuotes] = useState(false);
+    const [downloadingTicker, setDownloadingTicker] = useState<string | null>(null);
 
     useEffect(() => {
         const savedWatchlist = localStorage.getItem(WATCHLIST_STORAGE_KEY);
@@ -24,6 +29,41 @@ export const WatchlistView: React.FC = () => {
     useEffect(() => {
         localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(watchlist));
     }, [watchlist]);
+
+    const refreshQuotes = useCallback(async () => {
+        if (watchlist.length === 0) {
+            setQuotes({});
+            return;
+        }
+        setIsFetchingQuotes(true);
+        try {
+            const tickers = watchlist.map(item => item.ticker);
+            const results = await getQuotes(tickers);
+            setQuotes(results);
+        } catch (err) {
+            console.error('Failed to refresh watchlist quotes:', err);
+        } finally {
+            setIsFetchingQuotes(false);
+        }
+    }, [watchlist]);
+
+    useEffect(() => {
+        refreshQuotes(); // Initial fetch, and whenever the watchlist changes
+        const intervalId = setInterval(refreshQuotes, 60000); // Auto-refresh every 60 seconds
+        return () => clearInterval(intervalId);
+    }, [refreshQuotes]);
+
+    const handleDownload = async (ticker: string) => {
+        setDownloadingTicker(ticker);
+        try {
+            const source = await downloadHistoricalCsv(ticker);
+            console.log(`Downloaded ${ticker} historical data from ${source}`);
+        } catch (err) {
+            alert(`Could not download data for ${ticker}. Both NSE and Yahoo Finance failed. ${(err as Error).message}`);
+        } finally {
+            setDownloadingTicker(null);
+        }
+    };
 
     const handleAddItem = (e: React.FormEvent) => {
         e.preventDefault();
@@ -68,7 +108,17 @@ export const WatchlistView: React.FC = () => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 h-full overflow-hidden">
                 {/* Watchlist Management */}
                 <div className="lg:col-span-1 flex flex-col bg-gray-800 rounded-lg p-4">
-                    <h2 className="text-xl font-semibold mb-4 text-white">Your Tickers</h2>
+                    <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-xl font-semibold text-white">Your Tickers</h2>
+                        <button
+                            onClick={refreshQuotes}
+                            disabled={isFetchingQuotes || watchlist.length === 0}
+                            title="Refresh live prices (NSE, falls back to Yahoo Finance)"
+                            className="text-gray-300 hover:text-white disabled:text-gray-500"
+                        >
+                            {isFetchingQuotes ? <Spinner size="sm" /> : <Icon type="refresh" className="h-5 w-5" />}
+                        </button>
+                    </div>
                     <form onSubmit={handleAddItem} className="flex gap-2 mb-4">
                         <input
                             type="text"
@@ -86,14 +136,43 @@ export const WatchlistView: React.FC = () => {
                             <p className="text-center text-gray-400 pt-8">Your watchlist is empty.</p>
                         ) : (
                             <ul className="space-y-2">
-                                {watchlist.map(item => (
-                                    <li key={item.id} className="flex items-center justify-between bg-gray-700 p-2 rounded-md">
-                                        <span className="font-semibold">{item.ticker}</span>
-                                        <button onClick={() => handleRemoveItem(item.id)} className="text-red-400 hover:text-red-300">
-                                            <Icon type="trash" className="h-5 w-5" />
-                                        </button>
-                                    </li>
-                                ))}
+                                {watchlist.map(item => {
+                                    const quote = quotes[item.ticker.toUpperCase()];
+                                    const isUp = (quote?.change ?? 0) >= 0;
+                                    return (
+                                        <li key={item.id} className="flex items-center justify-between bg-gray-700 p-2 rounded-md">
+                                            <div>
+                                                <span className="font-semibold">{item.ticker}</span>
+                                                {quote ? (
+                                                    <div className="text-xs mt-0.5">
+                                                        <span className={isUp ? 'text-green-400' : 'text-red-400'}>
+                                                            {quote.price.toFixed(2)}
+                                                            {quote.percentChange != null && ` (${quote.percentChange.toFixed(2)}%)`}
+                                                        </span>
+                                                        <span className="text-gray-500 ml-1">{quote.source}</span>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-xs mt-0.5 text-gray-500">
+                                                        {isFetchingQuotes ? 'Loading…' : 'No price data'}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => handleDownload(item.ticker)}
+                                                    disabled={downloadingTicker === item.ticker}
+                                                    title="Download historical data (CSV)"
+                                                    className="text-blue-400 hover:text-blue-300 disabled:text-gray-500"
+                                                >
+                                                    {downloadingTicker === item.ticker ? <Spinner size="sm" /> : <Icon type="download" className="h-5 w-5" />}
+                                                </button>
+                                                <button onClick={() => handleRemoveItem(item.id)} className="text-red-400 hover:text-red-300">
+                                                    <Icon type="trash" className="h-5 w-5" />
+                                                </button>
+                                            </div>
+                                        </li>
+                                    );
+                                })}
                             </ul>
                         )}
                     </div>
