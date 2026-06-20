@@ -5,6 +5,7 @@ import { Icon } from './Icon';
 import { Spinner } from './Spinner';
 import { signIn, signOut, syncTradesToSheet, isGoogleApiConfigured } from '../services/googleSheetsService';
 import { getLivePrices } from '../services/geminiService';
+import { getQuotes } from '../services/marketDataService';
 import { ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell } from 'recharts';
 
 interface JournalViewProps {
@@ -36,15 +37,31 @@ export const JournalView: React.FC<JournalViewProps> = ({ trades, onAddTrade, on
     const [isFetchingLivePrices, setIsFetchingLivePrices] = useState(false);
 
     const fetchLivePrices = useCallback(async () => {
-      const tickers = [...new Set(openTrades.map(t => t.ticker))];
+      const tickers: string[] = [...new Set(openTrades.map(t => t.ticker))];
       if (tickers.length === 0) {
         setLiveData({});
         return;
       }
       setIsFetchingLivePrices(true);
       try {
-        const prices = await getLivePrices(tickers);
-        setLiveData(prices);
+        const quotes = await getQuotes(tickers);
+        const resolvedPrices: Record<string, number | null> = {};
+        const unresolvedTickers: string[] = [];
+        tickers.forEach(ticker => {
+          const quote = quotes[ticker.toUpperCase()];
+          if (quote) {
+            resolvedPrices[ticker] = quote.price;
+          } else {
+            unresolvedTickers.push(ticker);
+          }
+        });
+
+        if (unresolvedTickers.length > 0) {
+          const fallbackPrices = await getLivePrices(unresolvedTickers);
+          Object.assign(resolvedPrices, fallbackPrices);
+        }
+
+        setLiveData(resolvedPrices);
       } catch (error) {
         console.error("Failed to fetch live prices:", error);
       } finally {

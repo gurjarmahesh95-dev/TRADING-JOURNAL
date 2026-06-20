@@ -4,6 +4,7 @@ import type { Trade, TickerSuggestion } from '../types';
 import { Icon } from './Icon';
 import { Spinner } from './Spinner';
 import { analyzeChartImage, getTradeFeedback, getCurrentPrice, getPreTradeAnalysis, searchTickerSymbols } from '../services/geminiService';
+import { getQuote } from '../services/marketDataService';
 
 interface TradeModalProps {
   isOpen: boolean;
@@ -113,11 +114,17 @@ export const TradeModal: React.FC<TradeModalProps> = ({ isOpen, onClose, onSave,
   const handleFetchPrice = async () => {
       if (!trade.ticker) return;
       setIsFetchingPrice(true);
-      const price = await getCurrentPrice(trade.ticker);
-      if (price !== null) {
-          setTrade(prev => ({...prev, entryPrice: price}));
-      } else {
-          alert(`Could not fetch the price for ${trade.ticker}. Please enter it manually.`);
+      try {
+          const quote = await getQuote(trade.ticker);
+          setTrade(prev => ({...prev, entryPrice: quote.price}));
+      } catch (marketDataError) {
+          console.warn(`NSE/Yahoo price fetch failed for ${trade.ticker}, falling back to AI search:`, marketDataError);
+          const price = await getCurrentPrice(trade.ticker);
+          if (price !== null) {
+              setTrade(prev => ({...prev, entryPrice: price}));
+          } else {
+              alert(`Could not fetch the price for ${trade.ticker}. Please enter it manually.`);
+          }
       }
       setIsFetchingPrice(false);
   };
